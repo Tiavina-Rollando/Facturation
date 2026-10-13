@@ -66,6 +66,7 @@ if ($is_bc) {
 
     $totalHT = 0;
     $totalTissu = 0;
+    $totalAvance = 0; // On initialise le cumul des avances
     $lignes = [];
 
     for ($i = 0; $i < count($codes); $i++) {
@@ -73,11 +74,25 @@ if ($is_bc) {
         $prixVal = (float)($prix[$i] ?? 0);
         $tissuVal = (float)($tissus[$i] ?? 0);
 
+        // 1. Montant HT de la ligne
         $montant = $qteVal * $prixVal;
         $totalHT += $montant;
 
+        // 2. Coût du tissu pour la ligne
         $tissuCost = $tissuVal * $qteVal * ($config['prix_tissu_m'] ?? 0);
         $totalTissu += $tissuCost;
+
+        // 3. Montant TTC net de la ligne (servant de base au calcul de l'avance)
+        $tvaTaux = $config['tva'] ?? 0.20;
+        $montantTTC = $montant * (1 + $tvaTaux);
+        $ligneNetTTC = $montantTTC - $tissuCost;
+
+        // 4. Condition pour le taux d'avance par ligne
+        // Si tissu == 0 -> 50% d'avance, sinon -> 40%
+        $tauxAvance = ($tissuVal == 0) ? 0.50 : 0.40;
+        
+        // Cumul de l'avance pour cette ligne
+        $totalAvance += ($ligneNetTTC * $tauxAvance);
 
         $lignes[] = [
             "bc" => $bcs[$i] ?? '',
@@ -89,10 +104,13 @@ if ($is_bc) {
         ];
     }
 
+    // Synthèse globale
     $tva = $totalHT * ($config['tva'] ?? 0.20);
     $ttc = $totalHT + $tva;
     $totalFinal = $ttc - $totalTissu;
-    $avance = $totalFinal * 0.40;
+
+    // Avance globale calculée par la somme des avances de chaque ligne
+    $avance = $totalAvance;
     $reste = $totalFinal - $avance;
 
     $numberToWords = new NumberToWords();
@@ -184,7 +202,7 @@ ob_start();
             <?php foreach ($lignes as $l): ?>
             <tr>
                 <td class="center"><?= htmlspecialchars($l['code']) ?></td>
-                <td><?= str_replace('Couleur', '<br>Couleur', htmlspecialchars($l['designation'])) ?></td>
+                <td class="center"><?= preg_replace('/couleur/i', '<br>$0', htmlspecialchars($l['designation'])) ?></td>
                 <td class="center"><?= str_pad($l['quantite'], 2, "0", STR_PAD_LEFT) ?></td>
                 <td class="right"><?= number_format($l['prix'], 0, ',', ' ') ?></td>
                 <td class="center"><?= ($l['remise'] > 0) ? $l['remise'] . '%' : '-' ?></td>
@@ -235,7 +253,7 @@ ob_start();
                 <td class="center"><?= str_pad($l['quantite'], 2, "0", STR_PAD_LEFT) ?></td>
                 <td>
                     <?php if (!empty($l['bc'])): ?><strong>BC :</strong> <?= htmlspecialchars($l['bc']) ?><br><?php endif; ?>
-                    <?= str_replace('Couleur', '<br>Couleur', htmlspecialchars($l['designation'])) ?>
+                    <?= preg_replace('/couleur/i', '<br>$0', htmlspecialchars($l['designation'])) ?>
                 </td>
                 <td class="right"><?= number_format($l['prix'], 0, ',', ' ') ?></td>
                 <td class="right"><?= number_format($l['montant'], 0, ',', ' ') ?></td>
@@ -270,7 +288,7 @@ ob_start();
                         <td class="right"><?= number_format($totalFinal, 0, ',', ' ') ?> Ar</td>
                     </tr>
                     <tr>
-                        <td class="bold">Avance 40%</td>
+                        <td class="bold">Avance</td>
                         <td class="right">(<?= number_format($avance, 0, ',', ' ') ?> Ar)</td>
                     </tr>
                     <tr class="bold-row">
